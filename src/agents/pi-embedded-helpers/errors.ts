@@ -329,6 +329,7 @@ const REPLAY_INVALID_RE =
   /\bprevious_response_id\b.*\b(?:invalid|unknown|not found|does not exist|expired|mismatch)\b|\btool_(?:use|call)\.(?:input|arguments)\b.*\b(?:missing|required)\b|\bincorrect role information\b|\broles must alternate\b|\binput item id does not belong to this connection\b/i;
 const SANDBOX_BLOCKED_RE =
   /\bapproval is required\b|\bapproval timed out\b|\bapproval was denied\b|\bblocked by sandbox\b|\bsandbox\b.*\b(?:blocked|denied|forbidden|disabled|not allowed)\b/i;
+const NO_BODY_HTTP_WRAPPER_RE = /^(?:no body(?: response)?|status code \(no body\))$/i;
 
 function stripErrorPrefix(raw: string): string {
   return raw.replace(/^error:\s*/i, "").trim();
@@ -339,6 +340,21 @@ function inferSignalStatus(signal: FailoverSignal): number | undefined {
     return signal.status;
   }
   return extractLeadingHttpStatus(stripErrorPrefix(signal.message?.trim() ?? ""))?.code;
+}
+
+function isExplicitNoBodyHttpMessage(raw: string | undefined, status?: number): boolean {
+  const trimmed = raw?.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const leadingStatus = extractLeadingHttpStatus(trimmed);
+  if (leadingStatus) {
+    if (typeof status === "number" && leadingStatus.code !== status) {
+      return false;
+    }
+    return NO_BODY_HTTP_WRAPPER_RE.test(leadingStatus.rest);
+  }
+  return NO_BODY_HTTP_WRAPPER_RE.test(trimmed);
 }
 
 function isHtmlErrorResponse(raw: string, status?: number): boolean {
@@ -682,10 +698,11 @@ function classifyFailoverClassificationFromHttpStatus(
     if (messageClassification) {
       return messageClassification;
     }
-    // When the response has no body at all, return null instead of defaulting
-    // to "format". A 400/422 with no body is likely a transient proxy issue
-    // — classifying it as "format" triggers a compaction loop that cannot recover.
-    if (!message || message.trim().length === 0) {
+    // When the response has no body at all, or only surfaces as an HTTP wrapper
+    // like "400 status code (no body)", return null instead of defaulting to
+    // "format". These shapes are likely transient proxy issues — classifying
+    // them as "format" triggers a compaction loop that cannot recover.
+    if (!message || message.trim().length === 0 || isExplicitNoBodyHttpMessage(message, status)) {
       return null;
     }
     // Body exists but couldn't be classified — still treat as format error
