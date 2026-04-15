@@ -583,6 +583,7 @@ describe("classifyFailoverReasonFromHttpStatus", () => {
     expect(classifyFailoverReasonFromHttpStatus(400, "No body response")).toBeNull();
     expect(classifyFailoverReasonFromHttpStatus(400, "400 status code (no body)")).toBeNull();
     expect(classifyFailoverReasonFromHttpStatus(422, "HTTP 422: No body")).toBeNull();
+    expect(classifyFailoverReasonFromHttpStatus(422, "HTTP 422: No response body")).toBeNull();
   });
 
   it("treats HTTP 422 with an unclassifiable body as format error", () => {
@@ -700,6 +701,7 @@ describe("classifyFailoverReason", () => {
     expect(classifyFailoverReason("HTTP 400: No body")).toBeNull();
     expect(classifyFailoverReason("422 status code (no body)")).toBeNull();
     expect(classifyFailoverReason("HTTP 422: No body")).toBeNull();
+    expect(classifyFailoverReason("HTTP 422: No response body")).toBeNull();
   });
 
   it("preserves session and auth billing signals on HTTP 404 text", () => {

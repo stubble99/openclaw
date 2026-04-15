@@ -89,8 +89,24 @@ describe("failover-error", () => {
         message: "HTTP 422: No body",
       }),
     ).toBeNull();
+    expect(
+      resolveFailoverReasonFromError({
+        status: 422,
+        message: "HTTP 422: No response body",
+      }),
+    ).toBeNull();
     expect(resolveFailoverReasonFromError({ message: "400 status code (no body)" })).toBeNull();
     expect(resolveFailoverReasonFromError({ message: "HTTP 422: No body" })).toBeNull();
+    expect(resolveFailoverReasonFromError({ message: "HTTP 422: No response body" })).toBeNull();
+    expect(
+      resolveFailoverReasonFromError({
+        message: "outer wrapper",
+        cause: {
+          status: 422,
+          message: "HTTP 422: No response body",
+        },
+      }),
+    ).toBeNull();
     // Transient server errors (500/502/503/504) should trigger failover as timeout.
     expect(resolveFailoverReasonFromError({ status: 500 })).toBe("timeout");
     expect(resolveFailoverReasonFromError({ status: 502 })).toBe("timeout");

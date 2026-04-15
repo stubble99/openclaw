@@ -183,13 +183,6 @@ function getErrorMessage(err: unknown): string {
   return findErrorProperty(err, readDirectErrorMessage) ?? "";
 }
 
-function getErrorCause(err: unknown): unknown {
-  if (!err || typeof err !== "object" || !("cause" in err)) {
-    return undefined;
-  }
-  return (err as { cause?: unknown }).cause;
-}
-
 function hasTimeoutHint(err: unknown): boolean {
   if (!err) {
     return false;
@@ -236,6 +229,26 @@ function normalizeErrorSignal(err: unknown): FailoverSignal {
   };
 }
 
+function normalizeDirectErrorSignal(err: unknown): FailoverSignal {
+  const message = readDirectErrorMessage(err);
+  return {
+    status: readDirectStatusCode(err),
+    code: readDirectErrorCode(err),
+    message: message || undefined,
+    provider: readDirectProvider(err),
+  };
+}
+
+function getNestedErrorCandidates(err: unknown): unknown[] {
+  if (!err || typeof err !== "object") {
+    return [];
+  }
+  const candidate = err as { cause?: unknown; error?: unknown };
+  return [candidate.cause, candidate.error].filter(
+    (value): value is unknown => value !== undefined,
+  );
+}
+
 function resolveFailoverClassificationFromError(err: unknown): FailoverClassification | null {
   if (isFailoverError(err)) {
     return {
@@ -245,13 +258,28 @@ function resolveFailoverClassificationFromError(err: unknown): FailoverClassific
   }
 
   const classification = classifyFailoverSignal(normalizeErrorSignal(err));
-  if (!classification || classification.kind === "context_overflow") {
-    // Let wrapped causes override parent timeout/overflow guesses.
-    const cause = getErrorCause(err);
-    if (cause && cause !== err) {
-      const causeClassification = resolveFailoverClassificationFromError(cause);
+  const nestedCandidates = getNestedErrorCandidates(err).filter((candidate) => candidate !== err);
+  if (
+    !classification ||
+    classification.kind === "context_overflow" ||
+    (classification.kind === "reason" && classification.reason === "format")
+  ) {
+    // Let wrapped causes override parent timeout/overflow/format guesses when
+    // the nested error carries a more specific failover signal.
+    for (const candidate of nestedCandidates) {
+      const causeClassification = resolveFailoverClassificationFromError(candidate);
       if (causeClassification) {
         return causeClassification;
+      }
+      if (classification?.kind === "reason" && classification.reason === "format") {
+        const directSignal = normalizeDirectErrorSignal(candidate);
+        const directClassification = classifyFailoverSignal(directSignal);
+        if (
+          directClassification === null &&
+          (directSignal.status === 400 || directSignal.status === 422)
+        ) {
+          return null;
+        }
       }
     }
   }
