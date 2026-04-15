@@ -146,6 +146,12 @@ describe("failover-error", () => {
         message: "HTTP 410: conversation expired",
       }),
     ).toBe("session_expired");
+    expect(
+      resolveFailoverReasonFromError({
+        status: 410,
+        cause: { message: "session not found" },
+      }),
+    ).toBe("session_expired");
   });
 
   it("preserves explicit auth and billing signals on HTTP 410", () => {
@@ -246,6 +252,15 @@ describe("failover-error", () => {
         message: OPENROUTER_MODEL_NOT_FOUND_PAYLOAD,
       }),
     ).toBe("model_not_found");
+  });
+
+  it("lets wrapped HTTP 404 status guesses yield to nested auth signals", () => {
+    expect(
+      resolveFailoverReasonFromError({
+        status: 404,
+        cause: { message: "invalid_api_key" },
+      }),
+    ).toBe("auth");
   });
 
   it("classifies generic model-does-not-exist messages as model_not_found", () => {

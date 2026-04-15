@@ -258,12 +258,19 @@ function resolveFailoverClassificationFromError(err: unknown): FailoverClassific
     };
   }
 
-  const classification = classifyFailoverSignal(normalizeDirectErrorSignal(err));
+  const directSignal = normalizeDirectErrorSignal(err);
+  const messageClassification = directSignal.message
+    ? classifyFailoverSignal({
+        message: directSignal.message,
+        provider: directSignal.provider,
+      })
+    : null;
+  const classification = classifyFailoverSignal(directSignal);
   const nestedCandidates = getNestedErrorCandidates(err).filter((candidate) => candidate !== err);
   if (
     !classification ||
     classification.kind === "context_overflow" ||
-    (classification.kind === "reason" && classification.reason === "format")
+    messageClassification === null
   ) {
     // Let wrapped causes override parent timeout/overflow/format guesses when
     // the nested error carries a more specific failover signal.
