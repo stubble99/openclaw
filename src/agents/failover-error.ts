@@ -241,18 +241,8 @@ function isFormatClassification(classification: FailoverClassification | null): 
   return classification?.kind === "reason" && classification.reason === "format";
 }
 
-function normalizeDirectErrorSignal(err: unknown): FailoverSignal {
-  const message = readDirectErrorMessage(err);
-  return {
-    status: readDirectStatusCode(err),
-    code: readDirectErrorCode(err),
-    message: message || undefined,
-    provider: readDirectProvider(err),
-  };
-}
-
 function isNestedNoBodySignal(candidate: unknown, inheritedStatus: number | undefined): boolean {
-  const candidateSignal = normalizeDirectErrorSignal(candidate);
+  const candidateSignal = normalizeErrorSignal(candidate);
   return isUnclassifiedNoBodyHttpSignal({
     ...candidateSignal,
     status: candidateSignal.status ?? inheritedStatus,
