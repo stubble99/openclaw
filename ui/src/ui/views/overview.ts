@@ -265,11 +265,9 @@ export function renderOverview(props: OverviewProps) {
                       type="button"
                       class="btn btn--icon ${props.showGatewayToken ? "active" : ""}"
                       style="flex-shrink: 0; width: 36px; height: 36px; box-sizing: border-box;"
-                      title=${
-                        props.showGatewayToken
-                          ? t("overview.access.hideToken")
-                          : t("overview.access.showToken")
-                      }
+                      title=${props.showGatewayToken
+                        ? t("overview.access.hideToken")
+                        : t("overview.access.showToken")}
                       aria-label=${t("overview.access.toggleTokenVisibility")}
                       aria-pressed=${props.showGatewayToken}
                       @click=${props.onToggleGatewayTokenVisibility}
@@ -296,11 +294,9 @@ export function renderOverview(props: OverviewProps) {
                       type="button"
                       class="btn btn--icon ${props.showGatewayPassword ? "active" : ""}"
                       style="flex-shrink: 0; width: 36px; height: 36px; box-sizing: border-box;"
-                      title=${
-                        props.showGatewayPassword
-                          ? t("overview.access.hidePassword")
-                          : t("overview.access.showPassword")
-                      }
+                      title=${props.showGatewayPassword
+                        ? t("overview.access.hidePassword")
+                        : t("overview.access.showPassword")}
                       aria-label=${t("overview.access.togglePasswordVisibility")}
                       aria-pressed=${props.showGatewayPassword}
                       @click=${props.onToggleGatewayPasswordVisibility}
