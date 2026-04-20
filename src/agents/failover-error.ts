@@ -243,6 +243,9 @@ function isFormatClassification(classification: FailoverClassification | null): 
 
 function isNestedNoBodySignal(candidate: unknown, inheritedStatus: number | undefined): boolean {
   const candidateSignal = normalizeErrorSignal(candidate);
+  if (!candidateSignal.message?.trim()) {
+    return false;
+  }
   return isUnclassifiedNoBodyHttpSignal({
     ...candidateSignal,
     status: candidateSignal.status ?? inheritedStatus,

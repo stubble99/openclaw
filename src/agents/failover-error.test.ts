@@ -128,6 +128,13 @@ describe("failover-error", () => {
       resolveFailoverReasonFromError({
         status: 422,
         message: "Unprocessable Entity",
+        cause: {},
+      }),
+    ).toBe("format");
+    expect(
+      resolveFailoverReasonFromError({
+        status: 422,
+        message: "Unprocessable Entity",
         cause: {
           error: {
             message: "missing required property",
