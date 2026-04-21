@@ -238,6 +238,19 @@ describe("web outbound", () => {
     expect(sendMessage).toHaveBeenLastCalledWith("+1555", "pic", buf, "image/jpeg");
   });
 
+  it("retries transient outbound send failures", async () => {
+    sendMessage.mockRejectedValueOnce(new Error("socket reset"));
+    sendMessage.mockResolvedValueOnce({ messageId: "msg456" });
+
+    const result = await sendMessageWhatsApp("+1555", "hi", { verbose: false });
+
+    expect(result).toEqual({
+      messageId: "msg456",
+      toJid: "1555@s.whatsapp.net",
+    });
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("falls back to the first mediaUrls entry when mediaUrl is omitted", async () => {
     const buf = Buffer.from("img");
     loadWebMediaMock.mockResolvedValueOnce({

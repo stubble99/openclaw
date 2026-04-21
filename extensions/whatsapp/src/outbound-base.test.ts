@@ -54,6 +54,41 @@ describe("createWhatsAppOutboundBase", () => {
     expect(result).toMatchObject({ channel: "whatsapp", messageId: "msg-1" });
   });
 
+  it("normalizes mediaUrls before payload delivery", async () => {
+    const sendMessageWhatsApp = vi.fn(async () => ({
+      messageId: "msg-1",
+      toJid: "15551234567@s.whatsapp.net",
+    }));
+    const outbound = createWhatsAppOutboundBase({
+      chunker: (text) => [text],
+      sendMessageWhatsApp,
+      sendPollWhatsApp: vi.fn(),
+      shouldLogVerbose: () => false,
+      resolveTarget: ({ to }) => ({ ok: true as const, to: to ?? "" }),
+    });
+
+    await outbound.sendPayload!({
+      cfg: {} as never,
+      to: "whatsapp:+15551234567",
+      text: "",
+      payload: {
+        text: "\n\ncaption",
+        mediaUrls: ["   ", " /tmp/voice.ogg "],
+      },
+      deps: { sendWhatsApp: sendMessageWhatsApp },
+    });
+
+    expect(sendMessageWhatsApp).toHaveBeenCalledTimes(1);
+    expect(sendMessageWhatsApp).toHaveBeenCalledWith(
+      "whatsapp:+15551234567",
+      "caption",
+      expect.objectContaining({
+        verbose: false,
+        mediaUrl: "/tmp/voice.ogg",
+      }),
+    );
+  });
+
   it("threads cfg into sendPollWhatsApp call", async () => {
     const sendPollWhatsApp = vi.fn(async () => ({
       messageId: "wa-poll-1",

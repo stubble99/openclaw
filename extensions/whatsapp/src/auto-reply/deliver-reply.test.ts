@@ -30,6 +30,7 @@ vi.mock("../media.js", () => ({
 }));
 
 let deliverWebReply: typeof import("./deliver-reply.js").deliverWebReply;
+let whatsappOutbound: typeof import("../outbound-adapter.js").whatsappOutbound;
 
 function makeMsg(): WebInboundMsg {
   return {
@@ -91,6 +92,7 @@ async function expectReplySuppressed(replyResult: { text: string; isReasoning?: 
 describe("deliverWebReply", () => {
   beforeAll(async () => {
     ({ deliverWebReply } = await import("./deliver-reply.js"));
+    ({ whatsappOutbound } = await import("../outbound-adapter.js"));
   });
 
   it("suppresses payloads flagged as reasoning", async () => {
@@ -235,6 +237,64 @@ describe("deliverWebReply", () => {
     );
   });
 
+  it("keeps payload and auto-reply media normalization in parity", async () => {
+    const payload = {
+      text: "\n\ncaption",
+      mediaUrls: ["   ", " /tmp/voice.ogg "],
+    };
+    const sendWhatsApp = vi.fn(async () => ({ messageId: "wa-1", toJid: "jid" }));
+
+    await whatsappOutbound.sendPayload!({
+      cfg: {},
+      to: "5511999999999@c.us",
+      text: "",
+      payload,
+      deps: { sendWhatsApp },
+    });
+
+    const msg = makeMsg();
+    (
+      loadWebMedia as unknown as { mockResolvedValueOnce: (v: unknown) => void }
+    ).mockResolvedValueOnce({
+      buffer: Buffer.from("aud"),
+      contentType: "audio/ogg",
+      kind: "audio",
+    });
+
+    await deliverWebReply({
+      replyResult: payload,
+      msg,
+      maxMediaBytes: 1024 * 1024,
+      textLimit: 200,
+      replyLogger,
+      skipLog: true,
+    });
+
+    expect(sendWhatsApp).toHaveBeenCalledTimes(1);
+    expect(sendWhatsApp).toHaveBeenCalledWith("5511999999999@c.us", "caption", {
+      verbose: false,
+      cfg: {},
+      mediaUrl: "/tmp/voice.ogg",
+      mediaLocalRoots: undefined,
+      accountId: undefined,
+      gifPlayback: undefined,
+    });
+    expect(loadWebMedia).toHaveBeenCalledWith("/tmp/voice.ogg", {
+      maxBytes: 1024 * 1024,
+      localRoots: undefined,
+    });
+    expect(msg.sendMedia).toHaveBeenCalledTimes(1);
+    expect(msg.sendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({
+        audio: expect.any(Buffer),
+        ptt: true,
+        mimetype: "audio/ogg; codecs=opus",
+        caption: "caption",
+      }),
+    );
+    expect(msg.reply).not.toHaveBeenCalled();
+  });
+
   it("sends audio media as ptt voice note", async () => {
     const msg = makeMsg();
     (
@@ -258,7 +318,7 @@ describe("deliverWebReply", () => {
       expect.objectContaining({
         audio: expect.any(Buffer),
         ptt: true,
-        mimetype: "audio/ogg",
+        mimetype: "audio/ogg; codecs=opus",
         caption: "cap",
       }),
     );

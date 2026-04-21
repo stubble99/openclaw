@@ -14,6 +14,12 @@ import {
 } from "./accounts.js";
 import { getRegisteredWhatsAppConnectionController } from "./connection-controller-registry.js";
 import type { ActiveWebListener, ActiveWebSendOptions } from "./inbound/types.js";
+import {
+  normalizeWhatsAppLoadedMedia,
+  normalizeWhatsAppPayloadText,
+  resolveWhatsAppOutboundMediaUrls,
+  sendWhatsAppOutboundWithRetry,
+} from "./outbound-media-contract.js";
 import { loadOutboundMediaFromUrl } from "./outbound-media.runtime.js";
 import { markdownToWhatsApp, toWhatsappJid } from "./text-runtime.js";
 
@@ -64,14 +70,10 @@ export async function sendMessageWhatsApp(
     accountId?: string;
   },
 ): Promise<{ messageId: string; toJid: string }> {
-  let text = body.trimStart();
+  let text = normalizeWhatsAppPayloadText(body);
   const jid = toWhatsappJid(to);
-  const mediaUrls = Array.isArray(options.mediaUrls)
-    ? options.mediaUrls
-        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-        .filter(Boolean)
-    : [];
-  const primaryMediaUrl = options.mediaUrl?.trim() || mediaUrls[0];
+  const mediaUrls = resolveWhatsAppOutboundMediaUrls(options);
+  const primaryMediaUrl = mediaUrls[0];
   if (!text && !primaryMediaUrl) {
     return { messageId: "", toJid: jid };
   }
@@ -105,28 +107,23 @@ export async function sendMessageWhatsApp(
     let mediaType: string | undefined;
     let documentFileName: string | undefined;
     if (primaryMediaUrl) {
-      const media = await loadOutboundMediaFromUrl(primaryMediaUrl, {
-        maxBytes: resolveWhatsAppMediaMaxBytes(account),
-        mediaAccess: options.mediaAccess,
-        mediaLocalRoots: options.mediaLocalRoots,
-        mediaReadFile: options.mediaReadFile,
-      });
+      const media = normalizeWhatsAppLoadedMedia(
+        await loadOutboundMediaFromUrl(primaryMediaUrl, {
+          maxBytes: resolveWhatsAppMediaMaxBytes(account),
+          mediaAccess: options.mediaAccess,
+          mediaLocalRoots: options.mediaLocalRoots,
+          mediaReadFile: options.mediaReadFile,
+        }),
+        primaryMediaUrl,
+      );
       const caption = text || undefined;
       mediaBuffer = media.buffer;
-      mediaType = media.contentType ?? "application/octet-stream";
-      if (media.kind === "audio") {
-        // WhatsApp expects explicit opus codec for PTT voice notes.
-        mediaType =
-          media.contentType === "audio/ogg"
-            ? "audio/ogg; codecs=opus"
-            : (media.contentType ?? "application/octet-stream");
-      } else if (media.kind === "video") {
-        text = caption ?? "";
-      } else if (media.kind === "image") {
-        text = caption ?? "";
-      } else {
+      mediaType = media.mimetype;
+      if (media.kind === "document") {
         text = caption ?? "";
         documentFileName = media.fileName;
+      } else {
+        text = caption ?? "";
       }
     }
     outboundLog.info(`Sending message -> ${redactedJid}${primaryMediaUrl ? " (media)" : ""}`);
@@ -142,9 +139,18 @@ export async function sendMessageWhatsApp(
             accountId,
           }
         : undefined;
-    const result = sendOptions
-      ? await active.sendMessage(to, text, mediaBuffer, mediaType, sendOptions)
-      : await active.sendMessage(to, text, mediaBuffer, mediaType);
+    const result = await sendWhatsAppOutboundWithRetry({
+      send: async () =>
+        sendOptions
+          ? await active.sendMessage(to, text, mediaBuffer, mediaType, sendOptions)
+          : await active.sendMessage(to, text, mediaBuffer, mediaType),
+      onRetry: ({ attempt, maxAttempts, backoffMs, errorText }) => {
+        logger.warn(
+          { jid: redactedJid, attempt, backoffMs, err: errorText },
+          `retrying web outbound send (${attempt}/${maxAttempts - 1})`,
+        );
+      },
+    });
     const messageId = (result as { messageId?: string })?.messageId ?? "unknown";
     const durationMs = Date.now() - startedAt;
     outboundLog.info(
