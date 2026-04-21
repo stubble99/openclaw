@@ -64,6 +64,48 @@ function isNonEmptyString(value: string | undefined): value is string {
   return Boolean(value);
 }
 
+function summarizeQuotedSendOptions(sendOptions?: MiscMessageGenerationOptions): string | null {
+  const quoted = sendOptions?.quoted as
+    | {
+        key?: {
+          id?: string;
+          remoteJid?: string;
+          fromMe?: boolean;
+          participant?: string;
+        };
+        participant?: string;
+        message?: {
+          conversation?: string;
+          extendedTextMessage?: { text?: string };
+        } & Record<string, unknown>;
+      }
+    | undefined;
+  if (!quoted) {
+    return null;
+  }
+  const quotedMessageType =
+    quoted.message && typeof quoted.message === "object"
+      ? Object.keys(quoted.message).find(Boolean)
+      : undefined;
+  const quotedPreview =
+    typeof quoted.message?.conversation === "string"
+      ? quoted.message.conversation
+      : typeof quoted.message?.extendedTextMessage?.text === "string"
+        ? quoted.message.extendedTextMessage.text
+        : undefined;
+  return JSON.stringify({
+    quotedId: quoted.key?.id,
+    quotedRemoteJid: quoted.key?.remoteJid,
+    quotedFromMe: quoted.key?.fromMe,
+    quotedParticipant: quoted.participant ?? quoted.key?.participant,
+    quotedMessageType,
+    quotedPreview:
+      typeof quotedPreview === "string" && quotedPreview.length > 80
+        ? `${quotedPreview.slice(0, 77)}...`
+        : quotedPreview,
+  });
+}
+
 export type MonitorWebInboxOptions = {
   verbose: boolean;
   accountId: string;
@@ -262,6 +304,13 @@ export async function attachWebInboxToSocket(
       const currentSock = getCurrentSock();
       if (currentSock) {
         try {
+          const quotedSummary = summarizeQuotedSendOptions(sendOptions);
+          if (quotedSummary) {
+            logWhatsAppVerbose(
+              options.verbose,
+              `Sending WhatsApp message with quoted context to ${jid}: ${quotedSummary}`,
+            );
+          }
           const result = sendOptions
             ? await currentSock.sendMessage(jid, content, sendOptions)
             : await currentSock.sendMessage(jid, content);

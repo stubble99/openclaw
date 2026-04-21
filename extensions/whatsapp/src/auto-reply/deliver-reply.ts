@@ -19,6 +19,55 @@ import { elide } from "./util.js";
 
 const REASONING_PREFIX = "reasoning:";
 
+type QuoteLogShape = {
+  hasQuote: boolean;
+  quotedId?: string;
+  quotedRemoteJid?: string;
+  quotedFromMe?: boolean;
+  quotedParticipant?: string;
+  quotedMessageType?: string;
+  quotedPreview?: string;
+};
+
+function summarizeQuotedOptions(
+  quote: ReturnType<typeof buildQuotedMessageOptions> | undefined,
+): QuoteLogShape {
+  const quoted = quote?.quoted as
+    | {
+        key?: {
+          id?: string;
+          remoteJid?: string;
+          fromMe?: boolean;
+          participant?: string;
+        };
+        participant?: string;
+        message?: {
+          conversation?: string;
+          extendedTextMessage?: { text?: string };
+        } & Record<string, unknown>;
+      }
+    | undefined;
+  const quotedMessageType =
+    quoted?.message && typeof quoted.message === "object"
+      ? Object.keys(quoted.message).find(Boolean)
+      : undefined;
+  const quotedPreview =
+    typeof quoted?.message?.conversation === "string"
+      ? quoted.message.conversation
+      : typeof quoted?.message?.extendedTextMessage?.text === "string"
+        ? quoted.message.extendedTextMessage.text
+        : undefined;
+  return {
+    hasQuote: Boolean(quoted),
+    quotedId: quoted?.key?.id,
+    quotedRemoteJid: quoted?.key?.remoteJid,
+    quotedFromMe: quoted?.key?.fromMe,
+    quotedParticipant: quoted?.participant ?? quoted?.key?.participant,
+    quotedMessageType,
+    quotedPreview: quotedPreview ? elide(quotedPreview, 80) : undefined,
+  };
+}
+
 function shouldSuppressReasoningReply(payload: ReplyPayload): boolean {
   if (payload.isReasoning === true) {
     return true;
@@ -67,13 +116,24 @@ export async function deliverWebReply(params: {
     // per-message target.  Look up cached metadata for the specific
     // message being quoted — msg.body may be a combined batch body.
     const cached = lookupInboundMessageMeta(msg.accountId, msg.chatId, replyResult.replyToId);
-    return buildQuotedMessageOptions({
+    const quote = buildQuotedMessageOptions({
       messageId: replyResult.replyToId,
       remoteJid: msg.chatId,
       fromMe: false,
       participant: cached?.participant ?? (msg.chatType === "group" ? msg.senderJid : undefined),
       messageText: cached?.body ?? "",
     });
+    whatsappOutboundLog.debug(
+      `Reply threading debug for ${msg.from}: ${JSON.stringify({
+        replyToId: replyResult.replyToId,
+        accountId: msg.accountId,
+        chatId: msg.chatId,
+        cachedParticipant: cached?.participant,
+        cachedBody: cached?.body ? elide(cached.body, 80) : undefined,
+        quote: summarizeQuotedOptions(quote),
+      })}`,
+    );
+    return quote;
   };
 
   const sendWithRetry = async (fn: () => Promise<unknown>, label: string, maxAttempts = 3) => {
