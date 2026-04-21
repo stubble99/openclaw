@@ -105,14 +105,10 @@ export async function deliverWebReply(params: {
 
   // Media (with optional caption on first item)
   const leadingCaption = remainingText.shift() || "";
-  let skipRemainingMedia = false;
   await sendMediaWithLeadingCaption({
     mediaUrls: mediaList,
     caption: leadingCaption,
     send: async ({ mediaUrl, caption }) => {
-      if (skipRemainingMedia) {
-        return;
-      }
       const media = normalizeWhatsAppLoadedMedia(
         await loadWebMedia(mediaUrl, {
           maxBytes: maxMediaBytes,
@@ -193,7 +189,6 @@ export async function deliverWebReply(params: {
       if (!isFirst) {
         return;
       }
-      skipRemainingMedia = true;
       const warning =
         error instanceof Error ? `⚠️ Media failed: ${error.message}` : "⚠️ Media failed.";
       const fallbackTextParts = [remainingText.shift() ?? caption ?? "", warning].filter(Boolean);

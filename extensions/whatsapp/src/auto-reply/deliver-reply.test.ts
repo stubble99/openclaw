@@ -261,6 +261,65 @@ describe("deliverWebReply", () => {
     );
   });
 
+  it("still attempts later media after the first media fails", async () => {
+    vi.clearAllMocks();
+    const msg = makeMsg();
+    (
+      loadWebMedia as unknown as { mockResolvedValueOnce: (v: unknown) => void }
+    ).mockResolvedValueOnce({
+      buffer: Buffer.from("bad"),
+      contentType: "image/jpeg",
+      kind: "image",
+    });
+    (
+      loadWebMedia as unknown as { mockResolvedValueOnce: (v: unknown) => void }
+    ).mockResolvedValueOnce({
+      buffer: Buffer.from("good"),
+      contentType: "application/pdf",
+      kind: "file",
+      fileName: "good.pdf",
+    });
+    mockFirstSendMediaFailure(msg, "boom");
+    (
+      msg.sendMedia as unknown as { mockResolvedValueOnce: (v: unknown) => void }
+    ).mockResolvedValueOnce(undefined);
+
+    await deliverWebReply({
+      replyResult: {
+        text: "caption",
+        mediaUrls: ["http://example.com/bad.jpg", "http://example.com/good.pdf"],
+      },
+      msg,
+      maxMediaBytes: 1024 * 1024,
+      textLimit: 200,
+      replyLogger,
+      skipLog: true,
+    });
+
+    expect(loadWebMedia).toHaveBeenNthCalledWith(1, "http://example.com/bad.jpg", {
+      maxBytes: 1024 * 1024,
+      localRoots: undefined,
+    });
+    expect(loadWebMedia).toHaveBeenNthCalledWith(2, "http://example.com/good.pdf", {
+      maxBytes: 1024 * 1024,
+      localRoots: undefined,
+    });
+    expect(msg.sendMedia).toHaveBeenCalledTimes(2);
+    expect(msg.sendMedia).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        document: expect.any(Buffer),
+        fileName: "good.pdf",
+        caption: undefined,
+        mimetype: "application/pdf",
+      }),
+    );
+    expect(msg.reply).toHaveBeenCalledTimes(1);
+    expect(
+      String((msg.reply as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0]),
+    ).toContain("⚠️ Media failed");
+  });
+
   it("keeps payload and auto-reply media normalization in parity", async () => {
     const payload = {
       text: "\n\ncaption",
