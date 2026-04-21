@@ -17,7 +17,6 @@ let sendPollWhatsApp: typeof import("./send.js").sendPollWhatsApp;
 let sendReactionWhatsApp: typeof import("./send.js").sendReactionWhatsApp;
 let resetLogger: typeof import("openclaw/plugin-sdk/runtime-env").resetLogger;
 let setLoggerOverride: typeof import("openclaw/plugin-sdk/runtime-env").setLoggerOverride;
-let sleep: typeof import("./text-runtime.js").sleep;
 
 vi.mock("./connection-controller-registry.js", async () => {
   const actual = await vi.importActual<typeof import("./connection-controller-registry.js")>(
@@ -63,7 +62,6 @@ describe("web outbound", () => {
   beforeAll(async () => {
     ({ sendMessageWhatsApp, sendPollWhatsApp, sendReactionWhatsApp } = await import("./send.js"));
     ({ resetLogger, setLoggerOverride } = await import("openclaw/plugin-sdk/runtime-env"));
-    ({ sleep } = await import("./text-runtime.js"));
   });
 
   beforeEach(() => {
@@ -248,31 +246,13 @@ describe("web outbound", () => {
     expect(sendMessage).toHaveBeenLastCalledWith("+1555", "pic", buf, "image/jpeg");
   });
 
-  it("retries transient outbound send failures", async () => {
-    sendMessage.mockRejectedValueOnce(new Error("socket reset"));
-    sendMessage.mockResolvedValueOnce({ messageId: "msg456" });
-
-    const result = await sendMessageWhatsApp("+1555", "hi", { verbose: false });
-
-    expect(result).toEqual({
-      messageId: "msg456",
-      toJid: "1555@s.whatsapp.net",
-    });
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-  });
-
-  it("retries wrapped transient outbound send failures", async () => {
+  it("does not retry transient outbound send failures to avoid duplicate sends", async () => {
     sendMessage.mockRejectedValueOnce({ error: { message: "connection closed" } });
-    sendMessage.mockResolvedValueOnce({ messageId: "msg789" });
 
-    const result = await sendMessageWhatsApp("+1555", "hi", { verbose: false });
-
-    expect(result).toEqual({
-      messageId: "msg789",
-      toJid: "1555@s.whatsapp.net",
+    await expect(sendMessageWhatsApp("+1555", "hi", { verbose: false })).rejects.toEqual({
+      error: { message: "connection closed" },
     });
-    expect(sendMessage).toHaveBeenCalledTimes(2);
-    expect(sleep).toHaveBeenCalledWith(500);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it("prefers explicit mediaUrl over mediaUrls when both are present", async () => {

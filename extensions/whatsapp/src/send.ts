@@ -18,7 +18,6 @@ import {
   normalizeWhatsAppLoadedMedia,
   normalizeWhatsAppPayloadText,
   resolveWhatsAppOutboundMediaUrls,
-  sendWhatsAppOutboundWithRetry,
 } from "./outbound-media-contract.js";
 import { loadOutboundMediaFromUrl } from "./outbound-media.runtime.js";
 import { markdownToWhatsApp, toWhatsappJid } from "./text-runtime.js";
@@ -139,18 +138,9 @@ export async function sendMessageWhatsApp(
             accountId,
           }
         : undefined;
-    const result = await sendWhatsAppOutboundWithRetry({
-      send: async () =>
-        sendOptions
-          ? await active.sendMessage(to, text, mediaBuffer, mediaType, sendOptions)
-          : await active.sendMessage(to, text, mediaBuffer, mediaType),
-      onRetry: ({ attempt, maxAttempts, backoffMs, errorText }) => {
-        logger.warn(
-          { jid: redactedJid, attempt, backoffMs, err: errorText },
-          `retrying web outbound send (${attempt}/${maxAttempts - 1})`,
-        );
-      },
-    });
+    const result = sendOptions
+      ? await active.sendMessage(to, text, mediaBuffer, mediaType, sendOptions)
+      : await active.sendMessage(to, text, mediaBuffer, mediaType);
     const messageId = (result as { messageId?: string })?.messageId ?? "unknown";
     const durationMs = Date.now() - startedAt;
     outboundLog.info(
