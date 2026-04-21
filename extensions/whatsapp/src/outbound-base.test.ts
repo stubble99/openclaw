@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createWhatsAppOutboundBase } from "./outbound-base.js";
 import { createWhatsAppPollFixture } from "./outbound-test-support.js";
+import { cacheInboundMessageMeta } from "./quoted-message.js";
 
 describe("createWhatsAppOutboundBase", () => {
   it("exposes the provided chunker", () => {
@@ -52,6 +53,154 @@ describe("createWhatsAppOutboundBase", () => {
       }),
     );
     expect(result).toMatchObject({ channel: "whatsapp", messageId: "msg-1" });
+  });
+
+  it("uses the configured default account for quote metadata lookup when accountId is omitted", async () => {
+    cacheInboundMessageMeta("work", "15551234567@s.whatsapp.net", "reply-1", {
+      participant: "111@s.whatsapp.net",
+      body: "quoted body",
+    });
+    const sendMessageWhatsApp = vi.fn(async () => ({
+      messageId: "msg-1",
+      toJid: "15551234567@s.whatsapp.net",
+    }));
+    const outbound = createWhatsAppOutboundBase({
+      chunker: (text) => [text],
+      sendMessageWhatsApp,
+      sendPollWhatsApp: vi.fn(),
+      shouldLogVerbose: () => false,
+      resolveTarget: ({ to }) => ({ ok: true as const, to: to ?? "" }),
+    });
+
+    await outbound.sendText!({
+      cfg: {
+        channels: {
+          whatsapp: {
+            defaultAccount: "work",
+            accounts: {
+              work: {},
+            },
+          },
+        },
+      } as never,
+      to: "whatsapp:+15551234567",
+      text: "reply",
+      deps: { sendWhatsApp: sendMessageWhatsApp },
+      replyToId: "reply-1",
+    });
+
+    expect(sendMessageWhatsApp).toHaveBeenCalledWith(
+      "whatsapp:+15551234567",
+      "reply",
+      expect.objectContaining({
+        quotedMessageKey: {
+          id: "reply-1",
+          remoteJid: "15551234567@s.whatsapp.net",
+          fromMe: false,
+          participant: "111@s.whatsapp.net",
+          messageText: "quoted body",
+        },
+      }),
+    );
+  });
+
+  it("normalizes mixed-case defaultAccount before quote metadata lookup", async () => {
+    cacheInboundMessageMeta("work", "15551234567@s.whatsapp.net", "reply-case", {
+      participant: "333@s.whatsapp.net",
+      body: "case-normalized body",
+    });
+    const sendMessageWhatsApp = vi.fn(async () => ({
+      messageId: "msg-case",
+      toJid: "15551234567@s.whatsapp.net",
+    }));
+    const outbound = createWhatsAppOutboundBase({
+      chunker: (text) => [text],
+      sendMessageWhatsApp,
+      sendPollWhatsApp: vi.fn(),
+      shouldLogVerbose: () => false,
+      resolveTarget: ({ to }) => ({ ok: true as const, to: to ?? "" }),
+    });
+
+    await outbound.sendText!({
+      cfg: {
+        channels: {
+          whatsapp: {
+            defaultAccount: "Work",
+            accounts: {
+              work: {},
+              other: {},
+            },
+          },
+        },
+      } as never,
+      to: "whatsapp:+15551234567",
+      text: "reply",
+      deps: { sendWhatsApp: sendMessageWhatsApp },
+      replyToId: "reply-case",
+    });
+
+    expect(sendMessageWhatsApp).toHaveBeenCalledWith(
+      "whatsapp:+15551234567",
+      "reply",
+      expect.objectContaining({
+        quotedMessageKey: {
+          id: "reply-case",
+          remoteJid: "15551234567@s.whatsapp.net",
+          fromMe: false,
+          participant: "333@s.whatsapp.net",
+          messageText: "case-normalized body",
+        },
+      }),
+    );
+  });
+
+  it("matches sorted default-account fallback for quote metadata lookup when defaultAccount is unset", async () => {
+    cacheInboundMessageMeta("alpha", "15551234567@s.whatsapp.net", "reply-2", {
+      participant: "222@s.whatsapp.net",
+      body: "sorted default body",
+    });
+    const sendMessageWhatsApp = vi.fn(async () => ({
+      messageId: "msg-2",
+      toJid: "15551234567@s.whatsapp.net",
+    }));
+    const outbound = createWhatsAppOutboundBase({
+      chunker: (text) => [text],
+      sendMessageWhatsApp,
+      sendPollWhatsApp: vi.fn(),
+      shouldLogVerbose: () => false,
+      resolveTarget: ({ to }) => ({ ok: true as const, to: to ?? "" }),
+    });
+
+    await outbound.sendText!({
+      cfg: {
+        channels: {
+          whatsapp: {
+            accounts: {
+              zeta: {},
+              alpha: {},
+            },
+          },
+        },
+      } as never,
+      to: "whatsapp:+15551234567",
+      text: "reply",
+      deps: { sendWhatsApp: sendMessageWhatsApp },
+      replyToId: "reply-2",
+    });
+
+    expect(sendMessageWhatsApp).toHaveBeenCalledWith(
+      "whatsapp:+15551234567",
+      "reply",
+      expect.objectContaining({
+        quotedMessageKey: {
+          id: "reply-2",
+          remoteJid: "15551234567@s.whatsapp.net",
+          fromMe: false,
+          participant: "222@s.whatsapp.net",
+          messageText: "sorted default body",
+        },
+      }),
+    );
   });
 
   it("threads cfg into sendPollWhatsApp call", async () => {
