@@ -179,4 +179,74 @@ describe("resolveWhatsAppAuthDir", () => {
 
     expect(resolved.selfChatMode).toBeUndefined();
   });
+
+  it("single-account: inherits root channels.whatsapp.groups when the account has none", () => {
+    const resolved = resolveWhatsAppAccount({
+      cfg: {
+        channels: {
+          whatsapp: {
+            groups: {
+              "*": { systemPrompt: "You are Aria." },
+            },
+            accounts: {
+              default: {},
+            },
+          },
+        },
+      } as Parameters<typeof resolveWhatsAppAccount>[0]["cfg"],
+      accountId: "default",
+    });
+
+    expect(resolved.groups).toEqual({
+      "*": { systemPrompt: "You are Aria." },
+    });
+  });
+
+  it("multi-account: suppresses root channels.whatsapp.groups when the account has none", () => {
+    const resolved = resolveWhatsAppAccount({
+      cfg: {
+        channels: {
+          whatsapp: {
+            groups: {
+              "*": { systemPrompt: "You are Aria." },
+            },
+            accounts: {
+              default: {},
+              work: {},
+            },
+          },
+        },
+      } as Parameters<typeof resolveWhatsAppAccount>[0]["cfg"],
+      accountId: "work",
+    });
+
+    expect(resolved.groups).toBeUndefined();
+  });
+
+  it("multi-account: account-level groups replace root groups", () => {
+    const resolved = resolveWhatsAppAccount({
+      cfg: {
+        channels: {
+          whatsapp: {
+            groups: {
+              "*": { systemPrompt: "You are Aria." },
+            },
+            accounts: {
+              default: {},
+              work: {
+                groups: {
+                  "*": { systemPrompt: "You are WorkBot." },
+                },
+              },
+            },
+          },
+        },
+      } as Parameters<typeof resolveWhatsAppAccount>[0]["cfg"],
+      accountId: "work",
+    });
+
+    expect(resolved.groups).toEqual({
+      "*": { systemPrompt: "You are WorkBot." },
+    });
+  });
 });
