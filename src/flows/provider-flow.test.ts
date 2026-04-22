@@ -81,6 +81,42 @@ describe("provider flow install catalog contributions", () => {
     ]);
   });
 
+  it("adds a fallback group when install-catalog entries omit group metadata", () => {
+    resolveProviderInstallCatalogEntries.mockReturnValue([
+      {
+        pluginId: "demo-provider",
+        providerId: "demo-provider",
+        methodId: "api-key",
+        choiceId: "demo-provider-api-key",
+        choiceLabel: "Demo Provider API key",
+        label: "Demo Provider API key",
+        origin: "global",
+        install: {
+          npmSpec: "@vendor/demo-provider",
+        },
+      },
+    ]);
+
+    expect(resolveProviderSetupFlowContributions()).toEqual([
+      {
+        id: "provider:setup:demo-provider-api-key",
+        kind: "provider",
+        surface: "setup",
+        providerId: "demo-provider",
+        pluginId: "demo-provider",
+        option: {
+          value: "demo-provider-api-key",
+          label: "Demo Provider API key",
+          group: {
+            id: "demo-provider",
+            label: "Demo Provider API key",
+          },
+        },
+        source: "install-catalog",
+      },
+    ]);
+  });
+
   it("prefers runtime setup contributions over duplicate install-catalog entries", () => {
     resolveProviderWizardOptions.mockReturnValue([
       {

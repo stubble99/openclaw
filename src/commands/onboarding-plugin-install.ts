@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveBundledInstallPlanForCatalogEntry } from "../cli/plugin-install-plan.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveGitHeadPath } from "../infra/git-root.js";
 import {
   findBundledPluginSourceInMap,
   resolveBundledPluginSources,
@@ -11,6 +12,7 @@ import { installPluginFromNpmSpec } from "../plugins/install.js";
 import { buildNpmResolutionInstallFields, recordPluginInstall } from "../plugins/installs.js";
 import type { PluginPackageInstall } from "../plugins/manifest.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { sanitizeTerminalText } from "../terminal/safe-text.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 
 type InstallChoice = "npm" | "local" | "skip";
@@ -27,18 +29,21 @@ export type OnboardingPluginInstallResult = {
   pluginId: string;
 };
 
+function looksLikeGitDir(gitDir: string): boolean {
+  return (
+    fs.existsSync(path.join(gitDir, "HEAD")) &&
+    fs.existsSync(path.join(gitDir, "objects")) &&
+    fs.existsSync(path.join(gitDir, "refs"))
+  );
+}
+
 function hasGitWorkspace(workspaceDir?: string): boolean {
-  const candidates = new Set<string>();
-  candidates.add(path.join(process.cwd(), ".git"));
-  if (workspaceDir && workspaceDir !== process.cwd()) {
-    candidates.add(path.join(workspaceDir, ".git"));
+  const root = workspaceDir ?? process.cwd();
+  const headPath = resolveGitHeadPath(root);
+  if (!headPath) {
+    return false;
   }
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return true;
-    }
-  }
-  return false;
+  return looksLikeGitDir(path.dirname(headPath));
 }
 
 function addPluginLoadPath(cfg: OpenClawConfig, pluginPath: string): OpenClawConfig {
@@ -152,18 +157,21 @@ async function promptInstallChoice(params: {
   prompter: WizardPrompter;
 }): Promise<InstallChoice> {
   const npmSpec = params.entry.install.npmSpec?.trim();
+  const safeLabel = sanitizeTerminalText(params.entry.label);
+  const safeNpmSpec = npmSpec ? sanitizeTerminalText(npmSpec) : null;
+  const safeLocalPath = params.localPath ? sanitizeTerminalText(params.localPath) : null;
   const options: Array<{ value: InstallChoice; label: string; hint?: string }> = [];
-  if (npmSpec) {
+  if (safeNpmSpec) {
     options.push({
       value: "npm",
-      label: `Download from npm (${npmSpec})`,
+      label: `Download from npm (${safeNpmSpec})`,
     });
   }
   if (params.localPath) {
     options.push({
       value: "local",
       label: "Use local plugin path",
-      hint: params.localPath,
+      ...(safeLocalPath ? { hint: safeLocalPath } : {}),
     });
   }
   options.push({ value: "skip", label: "Skip for now" });
@@ -176,7 +184,7 @@ async function promptInstallChoice(params: {
       : params.defaultChoice;
 
   return await params.prompter.select<InstallChoice>({
-    message: `Install ${params.entry.label} plugin?`,
+    message: `Install ${safeLabel} plugin?`,
     options,
     initialValue,
   });
@@ -234,7 +242,9 @@ export async function ensureOnboardingPluginInstalled(params: {
   }
 
   if (!npmSpec) {
-    runtime.error?.(`Plugin install failed: no npm spec available for ${entry.pluginId}.`);
+    runtime.error?.(
+      `Plugin install failed: no npm spec available for ${sanitizeTerminalText(entry.pluginId)}.`,
+    );
     return {
       cfg: next,
       installed: false,
@@ -267,11 +277,14 @@ export async function ensureOnboardingPluginInstalled(params: {
     };
   }
 
-  await prompter.note(`Failed to install ${npmSpec}: ${result.error}`, "Plugin install");
+  await prompter.note(
+    `Failed to install ${sanitizeTerminalText(npmSpec)}: ${sanitizeTerminalText(result.error)}`,
+    "Plugin install",
+  );
 
   if (localPath) {
     const fallback = await prompter.confirm({
-      message: `Use local plugin path instead? (${localPath})`,
+      message: `Use local plugin path instead? (${sanitizeTerminalText(localPath)})`,
       initialValue: true,
     });
     if (fallback) {
@@ -285,7 +298,7 @@ export async function ensureOnboardingPluginInstalled(params: {
     }
   }
 
-  runtime.error?.(`Plugin install failed: ${result.error}`);
+  runtime.error?.(`Plugin install failed: ${sanitizeTerminalText(result.error)}`);
   return {
     cfg: next,
     installed: false,

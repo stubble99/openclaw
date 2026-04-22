@@ -212,4 +212,38 @@ describe("provider install catalog", () => {
       },
     });
   });
+
+  it("skips untrusted workspace install candidates when requested", () => {
+    discoverOpenClawPlugins.mockReturnValue({
+      candidates: [
+        {
+          idHint: "demo-provider",
+          origin: "workspace",
+          rootDir: "/repo/extensions/demo-provider",
+          source: "/repo/extensions/demo-provider/index.ts",
+          workspaceDir: "/repo",
+          packageName: "@vendor/demo-provider",
+          packageDir: "/repo/extensions/demo-provider",
+          packageManifest: {
+            install: {
+              npmSpec: "@vendor/demo-provider",
+            },
+          },
+        },
+      ],
+      diagnostics: [],
+    });
+
+    expect(
+      resolveProviderInstallCatalogEntries({
+        config: {
+          plugins: {
+            enabled: false,
+          },
+        },
+        includeUntrustedWorkspacePlugins: false,
+      }),
+    ).toEqual([]);
+    expect(loadPluginManifest).not.toHaveBeenCalled();
+  });
 });

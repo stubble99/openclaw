@@ -9,6 +9,7 @@ import { resolveDefaultAgentWorkspaceDir } from "../agents/workspace.js";
 import { ensureOnboardingPluginInstalled } from "../commands/onboarding-plugin-install.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { RuntimeEnv } from "../runtime.js";
+import { sanitizeTerminalText } from "../terminal/safe-text.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import { clearPluginDiscoveryCache } from "./discovery.js";
 import { enablePluginInConfig } from "./enable.js";
@@ -205,9 +206,10 @@ export async function applyAuthChoiceLoadedPluginProvider(
   if (installCatalogEntry) {
     const enableResult = enablePluginInConfig(nextConfig, installCatalogEntry.pluginId);
     if (!enableResult.enabled) {
+      const safeLabel = sanitizeTerminalText(installCatalogEntry.label);
       await params.prompter.note(
-        `${installCatalogEntry.label} plugin is disabled (${enableResult.reason ?? "blocked"}).`,
-        installCatalogEntry.label,
+        `${safeLabel} plugin is disabled (${enableResult.reason ?? "blocked"}).`,
+        safeLabel,
       );
       return { config: nextConfig };
     }

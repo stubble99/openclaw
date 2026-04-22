@@ -1,4 +1,5 @@
 import path from "node:path";
+import { normalizePluginsConfig, resolveEffectiveEnableState } from "./config-state.js";
 import { discoverOpenClawPlugins } from "./discovery.js";
 import {
   loadPluginManifest,
@@ -80,15 +81,42 @@ function resolveInstallInfo(params: {
 }
 
 function resolvePreferredInstallsByPluginId(
-  params: Pick<ProviderInstallCatalogParams, "workspaceDir" | "env">,
+  params: ProviderInstallCatalogParams,
 ): Map<string, PreferredInstallSource> {
   const preferredByPluginId = new Map<string, PreferredInstallSource>();
+  const normalizedConfig = normalizePluginsConfig(params.config?.plugins);
   for (const candidate of discoverOpenClawPlugins({
     workspaceDir: params.workspaceDir,
     env: params.env,
   }).candidates) {
+    const idHint = candidate.idHint.trim();
+    if (
+      candidate.origin === "workspace" &&
+      params.includeUntrustedWorkspacePlugins === false &&
+      idHint &&
+      !resolveEffectiveEnableState({
+        id: idHint,
+        origin: candidate.origin,
+        config: normalizedConfig,
+        rootConfig: params.config,
+      }).enabled
+    ) {
+      continue;
+    }
     const manifest = resolvePluginManifest(candidate.rootDir, candidate.origin !== "bundled");
     if (!manifest) {
+      continue;
+    }
+    if (
+      candidate.origin === "workspace" &&
+      params.includeUntrustedWorkspacePlugins === false &&
+      !resolveEffectiveEnableState({
+        id: manifest.manifest.id,
+        origin: candidate.origin,
+        config: normalizedConfig,
+        rootConfig: params.config,
+      }).enabled
+    ) {
       continue;
     }
     const install = resolveInstallInfo({

@@ -73,8 +73,10 @@ function resolveInstallCatalogProviderSetupFlowContributions(params?: {
   const scope = params?.scope ?? DEFAULT_PROVIDER_FLOW_SCOPE;
   return resolveProviderInstallCatalogEntries(params ?? {})
     .filter((entry) => includesProviderFlowScope(entry.onboardingScopes, scope))
-    .map((entry) =>
-      Object.assign(
+    .map((entry) => {
+      const groupId = entry.groupId ?? entry.providerId;
+      const groupLabel = entry.groupLabel ?? entry.label;
+      return Object.assign(
         {
           id: `provider:setup:${entry.choiceId}`,
           kind: `provider` as const,
@@ -91,21 +93,17 @@ function resolveInstallCatalogProviderSetupFlowContributions(params?: {
             ...(entry.assistantVisibility
               ? { assistantVisibility: entry.assistantVisibility }
               : {}),
-            ...(entry.groupId && entry.groupLabel
-              ? {
-                  group: {
-                    id: entry.groupId,
-                    label: entry.groupLabel,
-                    ...(entry.groupHint ? { hint: entry.groupHint } : {}),
-                  },
-                }
-              : {}),
+            group: {
+              id: groupId,
+              label: groupLabel,
+              ...(entry.groupHint ? { hint: entry.groupHint } : {}),
+            },
           },
         },
         entry.onboardingScopes ? { onboardingScopes: [...entry.onboardingScopes] } : {},
         { source: `install-catalog` as const },
-      ),
-    );
+      );
+    });
 }
 
 export function resolveProviderSetupFlowContributions(params?: {
